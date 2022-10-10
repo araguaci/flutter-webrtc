@@ -17,6 +17,9 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
 
   @override
   Future<void> initialize() async {
+    if (_textureId != null) {
+      return;
+    }
     final response = await WebRTC.invokeMethod('createVideoRenderer', {});
     _textureId = response['textureId'];
     _eventSubscription = EventChannel('FlutterWebRTC/Texture$textureId')
@@ -40,6 +43,9 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   Function? onResize;
 
   @override
+  Function? onFirstFrameRendered;
+
+  @override
   set srcObject(MediaStream? stream) {
     if (textureId == null) throw 'Call initialize before setting the stream';
 
@@ -58,11 +64,13 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   @override
   Future<void> dispose() async {
     await _eventSubscription?.cancel();
-    await WebRTC.invokeMethod(
-      'videoRendererDispose',
-      <String, dynamic>{'textureId': _textureId},
-    );
-
+    _eventSubscription = null;
+    if (_textureId != null) {
+      await WebRTC.invokeMethod('videoRendererDispose', <String, dynamic>{
+        'textureId': _textureId,
+      });
+      _textureId = null;
+    }
     return super.dispose();
   }
 
@@ -83,6 +91,7 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
         break;
       case 'didFirstFrameRendered':
         value = value.copyWith(renderVideo: renderVideo);
+        onFirstFrameRendered?.call();
         break;
     }
   }
@@ -116,8 +125,13 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   }
 
   @override
-  Future<bool> audioOutput(String deviceId) {
-    // TODO(cloudwebrtc): related to https://github.com/flutter-webrtc/flutter-webrtc/issues/395
-    throw UnimplementedError('This is not implement yet');
+  Future<bool> audioOutput(String deviceId) async {
+    try {
+      await Helper.selectAudioOutput(deviceId);
+    } catch (e) {
+      print('Helper.selectAudioOutput ${e.toString()}');
+      return false;
+    }
+    return true;
   }
 }

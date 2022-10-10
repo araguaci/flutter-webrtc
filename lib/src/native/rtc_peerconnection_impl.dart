@@ -155,8 +155,10 @@ class RTCPeerConnectionNative extends RTCPeerConnection {
       case 'didOpenDataChannel':
         int dataChannelId = map['id'];
         String label = map['label'];
-        _dataChannel =
-            RTCDataChannelNative(_peerConnectionId, label, dataChannelId);
+        String flutterId = map['flutterId'];
+        _dataChannel = RTCDataChannelNative(
+            _peerConnectionId, label, dataChannelId, flutterId,
+            state: RTCDataChannelState.RTCDataChannelOpen);
         onDataChannel?.call(_dataChannel!);
         break;
       case 'onRenegotiationNeeded':
@@ -221,7 +223,7 @@ class RTCPeerConnectionNative extends RTCPeerConnection {
   }
 
   EventChannel _eventChannelFor(String peerConnectionId) {
-    return EventChannel('FlutterWebRTC/peerConnectoinEvent$peerConnectionId');
+    return EventChannel('FlutterWebRTC/peerConnectionEvent$peerConnectionId');
   }
 
   @override
@@ -377,7 +379,7 @@ class RTCPeerConnectionNative extends RTCPeerConnection {
         List<dynamic> reports = response['stats'];
         reports.forEach((report) {
           stats.add(StatsReport(report['id'], report['type'],
-              report['timestamp'], report['values']));
+              (report['timestamp'] as num).toDouble(), report['values']));
         });
       }
       return stats;
@@ -407,8 +409,8 @@ class RTCPeerConnectionNative extends RTCPeerConnection {
         'dataChannelDict': dataChannelDict.toMap()
       });
 
-      _dataChannel =
-          RTCDataChannelNative(_peerConnectionId, label, response['id']);
+      _dataChannel = RTCDataChannelNative(
+          _peerConnectionId, label, response['id'], response['flutterId']);
       return _dataChannel!;
     } on PlatformException catch (e) {
       throw 'Unable to RTCPeerConnection::createDataChannel: ${e.message}';

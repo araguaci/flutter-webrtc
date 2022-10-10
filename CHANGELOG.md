@@ -1,6 +1,92 @@
 # Changelog
 
 --------------------------------------------
+[0.9.8] - 2022-09-30
+
+* [Android] fix: Make sure local stream/track dispose correctly.
+* [Android] Remove bluetooth permission on peerConnectionInit.
+* [iOS] Fix system sound interruption on iOS (#1099).
+* [Android] Fix: call mode on app start (#1097).
+* [Dart] Avoid renderer initialization multiple times (#1067).
+
+[0.9.7] - 2022-09-13
+
+* [Windows] Support sendDtmf.
+* [Windows] Fixed getStats.
+
+[0.9.6] - 2022-09-06
+
+* [Dart] The dc created by didOpenDataChannel needs to set state to open.
+* [Dart] Added callback onFirstFrameRendered.
+
+[0.9.5] - 2022-08-30
+
+* [Android] fix: Fix crash when using multiple renderers.
+* [Android] fix bug with track dispose cannot close video
+* [Andorid/iOS/macOS/Windows] Fix bug of missing events in data-channel.
+
+[0.9.4] - 2022-08-22
+
+* [Andorid/iOS/macOS/Windows] New audio input/output selection API, ondevicechange event is used to monitor audio device changes.
+
+[0.9.3] - 2022-08-15
+
+* [Windows/macOS] Fix UI freeze when getting thumbnails.
+
+[0.9.2] - 2022-08-09
+
+* [Android] update libwebrtc to com.github.webrtc-sdk:android:104.5112.01.
+* [iOS/macOS] update WebRTC-SDK to 104.5112.02.
+* [Windows] update libwebrtc.dll to 104.5112.02.
+
+[0.9.1] - 2022-08-01
+
+* [iOS] fix : iOS app could not change camera resolutions cause by wrong datatype in the video Contraints.
+* [Darwin] bump version for .podspec.
+
+[0.9.0] - 2022-07-27
+
+* [macOS] Added screen-sharing support for macOS
+* [Windows] Added screen-sharing support for Windows
+* [iOS/macOS] fix: Fix compile warning for Darwin
+* [Darwin/Android/Windows] fix: Fix typo peerConnectoinEvent -> peerConnectionEvent for EventChannel name (#1019)
+
+[0.8.12] - 2022-07-15
+
+* [Darwin]: fix: camera release.
+
+[0.8.11] - 2022-07-11
+
+* [Windows] Fix variant exception of findLongInt. (#990)
+* [Windows] fix unable to get username/credential when parsing iceServers containing urls
+* [iOS] Fix RTCAudioSession properties set with libwebrtc m97, Fixes #987.
+
+[0.8.10] - 2022-06-28
+
+* [iOS] IPC Broadcast Upload Extension support for Screenshare
+
+[0.8.9] - 2022-06-08
+
+* [Android] Fixes DataChannel issue described in #974
+* [iOS] Fixes DataChannel issue described in #974
+* [Dawrin/Android/Windows] Split data channel's webrtc id from our internal id (#961)
+* [Windows] Update to m97.
+* [Windows] Add PeerConnectionState
+* [Windows] Fix can't open mic alone when built-in AEC is enabled.
+
+[0.8.8] - 2022-05-31
+
+* [Android] Added onBufferedAmountChange callback which will return currentBuffer and changedBuffer and implemented bufferedAmount.
+* [Android] Added onBufferedAmountLow callback which will return currentBuffer ans will be called if bufferedAmountLowThreshold is set a value.
+
+[0.8.7] - 2022-05-18
+
+* [iOS/macOS] fix: Use RTCYUVHelper instead of external libyuv library (#954).
+* [iOS/macOS] Flutter 3.0 crash fixes, setStreamHandler on main thread (#953)
+* [Android] Use mavenCentral() instead of jcenter() (#952)
+* [Windows] Use uint8_t* instead of string in DataChannel::Send method, fix binary send bug.
+* [Android] fix: "Reply already submitted" error and setVolume() not working on remote streams.
+
 [0.8.6] - 2022-05-08
 
 * [Web/Android/iOS/macOS] Support null tracks in replaceTrack/setTrack.
@@ -18,7 +104,6 @@
 
 * [Android] Fix simulcast factory not sending back EncoderInfo (#891)
 * [Android] fix: correct misspell in method screenRequestPermissions (#876)
-
 
 [0.8.3] - 2022-03-01
 
