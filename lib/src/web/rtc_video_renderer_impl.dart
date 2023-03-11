@@ -83,8 +83,11 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   @override
   bool get renderVideo => _srcObject != null;
 
-  String get _elementIdForAudio => 'audio_RTCVideoRenderer-$textureId';
-  String get _elementIdForVideo => 'video_RTCVideoRenderer-$textureId';
+  String get _elementIdForAudio => 'audio_$viewType';
+
+  String get _elementIdForVideo => 'video_$viewType';
+
+  String get viewType => 'RTCVideoRenderer-$textureId';
 
   void _updateAllValues() {
     final element = findHtmlView();
@@ -139,7 +142,61 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
       _audioElement?.srcObject = _audioStream;
     }
 
-    findHtmlView()?.srcObject = _videoStream;
+    var videoElement = findHtmlView();
+    if (null != videoElement) {
+      videoElement.srcObject = _videoStream;
+      _applyDefaultVideoStyles(findHtmlView()!);
+    }
+
+    value = value.copyWith(renderVideo: renderVideo);
+  }
+
+  void setSrcObject({MediaStream? stream, String? trackId}) {
+    if (stream == null) {
+      findHtmlView()?.srcObject = null;
+      _audioElement?.srcObject = null;
+      _srcObject = null;
+      return;
+    }
+
+    _srcObject = stream as MediaStreamWeb;
+
+    if (null != _srcObject) {
+      if (stream.getVideoTracks().isNotEmpty) {
+        _videoStream = html.MediaStream();
+        for (final track in _srcObject!.jsStream.getVideoTracks()) {
+          if (track.id == trackId) {
+            _videoStream!.addTrack(track);
+          }
+        }
+      }
+      if (stream.getAudioTracks().isNotEmpty) {
+        _audioStream = html.MediaStream();
+        for (final track in _srcObject!.jsStream.getAudioTracks()) {
+          _audioStream!.addTrack(track);
+        }
+      }
+    } else {
+      _videoStream = null;
+      _audioStream = null;
+    }
+
+    if (null != _audioStream) {
+      if (null == _audioElement) {
+        _audioElement = html.AudioElement()
+          ..id = _elementIdForAudio
+          ..muted = stream.ownerTag == 'local'
+          ..autoplay = true;
+        _ensureAudioManagerDiv().append(_audioElement!);
+      }
+      _audioElement?.srcObject = _audioStream;
+    }
+
+    var videoElement = findHtmlView();
+    if (null != videoElement) {
+      videoElement.srcObject = _videoStream;
+      _applyDefaultVideoStyles(findHtmlView()!);
+    }
 
     value = value.copyWith(renderVideo: renderVideo);
   }
@@ -164,7 +221,9 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   @override
   Future<void> dispose() async {
     _srcObject = null;
-    _subscriptions.forEach((s) => s.cancel());
+    for (var s in _subscriptions) {
+      s.cancel();
+    }
     final element = findHtmlView();
     element?.removeAttribute('src');
     element?.load();
@@ -196,27 +255,25 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
   @override
   Future<void> initialize() async {
     // ignore: undefined_prefixed_name
-    ui.platformViewRegistry.registerViewFactory('RTCVideoRenderer-$textureId',
-        (int viewId) {
-      _subscriptions.forEach((s) => s.cancel());
+    ui.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
+      for (var s in _subscriptions) {
+        s.cancel();
+      }
       _subscriptions.clear();
 
       final element = html.VideoElement()
         ..autoplay = true
         ..muted = true
         ..controls = false
-        ..style.objectFit = _objectFit
-        ..style.border = 'none'
-        ..style.width = '100%'
-        ..style.height = '100%'
         ..srcObject = _videoStream
         ..id = _elementIdForVideo
         ..setAttribute('playsinline', 'true');
 
+      _applyDefaultVideoStyles(element);
+
       _subscriptions.add(
         element.onCanPlay.listen((dynamic _) {
           _updateAllValues();
-          // print('RTCVideoRenderer: videoElement.onCanPlay ${value.toString()}');
         }),
       );
 
@@ -224,7 +281,6 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
         element.onResize.listen((dynamic _) {
           _updateAllValues();
           onResize?.call();
-          // print('RTCVideoRenderer: videoElement.onResize ${value.toString()}');
         }),
       );
 
@@ -253,6 +309,19 @@ class RTCVideoRenderer extends ValueNotifier<RTCVideoValue>
 
       return element;
     });
+  }
+
+  void _applyDefaultVideoStyles(html.VideoElement element) {
+    // Flip the video horizontally if is mirrored.
+    if (mirror) {
+      element.style.transform = 'scaleX(-1)';
+    }
+
+    element
+      ..style.objectFit = _objectFit
+      ..style.border = 'none'
+      ..style.width = '100%'
+      ..style.height = '100%';
   }
 
   @override

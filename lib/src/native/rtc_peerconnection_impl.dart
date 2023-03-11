@@ -360,10 +360,14 @@ class RTCPeerConnectionNative extends RTCPeerConnection {
 
   @override
   Future<void> addCandidate(RTCIceCandidate candidate) async {
-    await WebRTC.invokeMethod('addCandidate', <String, dynamic>{
-      'peerConnectionId': _peerConnectionId,
-      'candidate': candidate.toMap(),
-    });
+    try {
+      await WebRTC.invokeMethod('addCandidate', <String, dynamic>{
+        'peerConnectionId': _peerConnectionId,
+        'candidate': candidate.toMap(),
+      });
+    } on PlatformException catch (e) {
+      throw 'Unable to RTCPeerConnection::addCandidate: ${e.message}';
+    }
   }
 
   @override
@@ -371,16 +375,16 @@ class RTCPeerConnectionNative extends RTCPeerConnection {
     try {
       final response = await WebRTC.invokeMethod('getStats', <String, dynamic>{
         'peerConnectionId': _peerConnectionId,
-        'track': track != null ? track.id : null
+        'trackId': track?.id
       });
 
       var stats = <StatsReport>[];
       if (response != null) {
         List<dynamic> reports = response['stats'];
-        reports.forEach((report) {
+        for (var report in reports) {
           stats.add(StatsReport(report['id'], report['type'],
               (report['timestamp'] as num).toDouble(), report['values']));
-        });
+        }
       }
       return stats;
     } on PlatformException catch (e) {

@@ -53,7 +53,9 @@ public class FlutterRTCVideoRenderer implements EventChannel.StreamHandler {
                 ConstraintsMap params = new ConstraintsMap();
                 params.putString("event", "didFirstFrameRendered");
                 params.putInt("id", id);
-                eventSink.success(params.toMap());
+                if (eventSink != null) {
+                    eventSink.success(params.toMap());
+                }
             }
 
             @Override
@@ -150,6 +152,35 @@ public class FlutterRTCVideoRenderer implements EventChannel.StreamHandler {
             List<VideoTrack> videoTracks = mediaStream.videoTracks;
 
             videoTrack = videoTracks.isEmpty() ? null : videoTracks.get(0);
+        }
+
+        setVideoTrack(videoTrack);
+    }
+   /**
+     * Sets the {@code MediaStream} to be rendered by this {@code FlutterRTCVideoRenderer}.
+     * The implementation renders the first {@link VideoTrack}, if any, of the
+     * specified trackId
+     *
+     * @param mediaStream The {@code MediaStream} to be rendered by this
+     *                    {@code FlutterRTCVideoRenderer} or {@code null}.
+     * @param trackId The {@code trackId} to be rendered by this
+     *                    {@code FlutterRTCVideoRenderer} or {@code null}.
+     */
+    public void setStream(MediaStream mediaStream,String trackId) {
+        VideoTrack videoTrack;
+        this.mediaStream = mediaStream;
+        if (mediaStream == null) {
+            videoTrack = null;
+        } else {
+            List<VideoTrack> videoTracks = mediaStream.videoTracks;
+
+            videoTrack = videoTracks.isEmpty() ? null : videoTracks.get(0);
+
+            for (VideoTrack track : videoTracks){
+                if (track.id().equals(trackId)){
+                    videoTrack = track;
+                }
+            }
         }
 
         setVideoTrack(videoTrack);

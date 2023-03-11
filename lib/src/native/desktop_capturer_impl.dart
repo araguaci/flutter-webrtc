@@ -20,6 +20,8 @@ class DesktopCapturerSourceNative extends DesktopCapturerSource {
     }
     return source;
   }
+
+  //ignore: close_sinks
   final StreamController<String> _onNameChanged =
       StreamController.broadcast(sync: true);
 
@@ -144,6 +146,7 @@ class DesktopCapturerNative extends DesktopCapturer {
   @override
   Future<List<DesktopCapturerSource>> getSources(
       {required List<SourceType> types, ThumbnailSize? thumbnailSize}) async {
+    _sources.clear();
     final response = await WebRTC.invokeMethod(
       'getDesktopSources',
       <String, dynamic>{

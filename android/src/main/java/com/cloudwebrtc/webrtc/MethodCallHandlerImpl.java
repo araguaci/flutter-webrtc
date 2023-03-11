@@ -58,6 +58,7 @@ import org.webrtc.PeerConnection.TcpCandidatePolicy;
 import org.webrtc.PeerConnectionFactory;
 import org.webrtc.PeerConnectionFactory.InitializationOptions;
 import org.webrtc.PeerConnectionFactory.Options;
+import org.webrtc.RtpCapabilities;
 import org.webrtc.RtpSender;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
@@ -105,18 +106,14 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
    */
   private GetUserMediaImpl getUserMediaImpl;
 
-  private final AudioSwitchManager audioSwitchManager;
-
   private AudioDeviceModule audioDeviceModule;
 
   private Activity activity;
 
-  MethodCallHandlerImpl(Context context, BinaryMessenger messenger, TextureRegistry textureRegistry,
-                        @NonNull AudioSwitchManager audioManager) {
+  MethodCallHandlerImpl(Context context, BinaryMessenger messenger, TextureRegistry textureRegistry) {
     this.context = context;
     this.textures = textureRegistry;
     this.messenger = messenger;
-    this.audioSwitchManager = audioManager;
   }
 
   static private void resultError(String method, String error, Result result) {
@@ -126,6 +123,18 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
   }
 
   void dispose() {
+    for (final MediaStream mediaStream : localStreams.values()) {
+      streamDispose(mediaStream);
+      mediaStream.dispose();
+    }
+    localStreams.clear();
+    for (final MediaStreamTrack track : localTracks.values()) {
+      track.dispose();
+    }
+    localTracks.clear();
+    for (final PeerConnectionObserver connection : mPeerConnectionObservers.values()) {
+      peerConnectionDispose(connection);
+    }
     mPeerConnectionObservers.clear();
   }
 
@@ -422,6 +431,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         int textureId = call.argument("textureId");
         String streamId = call.argument("streamId");
         String ownerTag = call.argument("ownerTag");
+        String trackId = call.argument("trackId");
         FlutterRTCVideoRenderer render = renders.get(textureId);
         if (render == null) {
           resultError("videoRendererSetSrcObject", "render [" + textureId + "] not found !", result);
@@ -433,7 +443,11 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         } else {
           stream = getStreamForId(streamId, ownerTag);
         }
-        render.setStream(stream);
+        if (trackId != null && !trackId.equals("0")){
+          render.setStream(stream, trackId);
+        } else {
+          render.setStream(stream);
+        }
         result.success(null);
         break;
       }
@@ -462,13 +476,13 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
       }
       case "selectAudioOutput": {
         String deviceId = call.argument("deviceId");
-        audioSwitchManager.selectAudioOutput(AudioDeviceKind.fromTypeName(deviceId));
+        AudioSwitchManager.instance.selectAudioOutput(AudioDeviceKind.fromTypeName(deviceId));
         result.success(null);
         break;
       }
       case "setMicrophoneMute":
         boolean mute = call.argument("mute");
-        audioSwitchManager.setMicrophoneMute(mute);
+        AudioSwitchManager.instance.setMicrophoneMute(mute);
         result.success(null);
         break;
       case "selectAudioInput":
@@ -482,7 +496,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         break;
       case "enableSpeakerphone":
         boolean enable = call.argument("enable");
-        audioSwitchManager.enableSpeakerphone(enable);
+        AudioSwitchManager.instance.enableSpeakerphone(enable);
         result.success(null);
         break;
       case "getDisplayMedia": {
@@ -657,12 +671,6 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         rtpSenderSetTrack(peerConnectionId, rtpSenderId, trackId, false, result);
         break;
       }
-      case "rtpSenderDispose": {
-        String peerConnectionId = call.argument("peerConnectionId");
-        String rtpSenderId = call.argument("rtpSenderId");
-        rtpSenderDispose(peerConnectionId, rtpSenderId, result);
-        break;
-      }
       case "getSenders": {
         String peerConnectionId = call.argument("peerConnectionId");
         getSenders(peerConnectionId, result);
@@ -688,10 +696,72 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         }
         break;
       }
+      case "getRtpSenderCapabilities": {
+        String kind = call.argument("kind");
+        MediaStreamTrack.MediaType mediaType = MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO;
+        if (kind.equals("video")) {
+          mediaType = MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO;
+        }
+        RtpCapabilities capabilities = mFactory.getRtpSenderCapabilities(mediaType);
+        result.success(capabilitiestoMap(capabilities).toMap());
+        break;
+      }
+      case "getRtpReceiverCapabilities": {
+        String kind = call.argument("kind");
+        MediaStreamTrack.MediaType mediaType = MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO;
+        if (kind.equals("video")) {
+          mediaType = MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO;
+        }
+        RtpCapabilities capabilities = mFactory.getRtpReceiverCapabilities(mediaType);
+        result.success(capabilitiestoMap(capabilities).toMap());
+        break;
+      }
+      case "setCodecPreferences":
+        String peerConnectionId = call.argument("peerConnectionId");
+        List<Map<String, Object>> codecs = call.argument("codecs");
+        String transceiverId = call.argument("transceiverId");
+        rtpTransceiverSetCodecPreferences(peerConnectionId, transceiverId, codecs, result);
+        break;
       default:
         result.notImplemented();
         break;
     }
+  }
+
+  private ConstraintsMap capabilitiestoMap(RtpCapabilities capabilities) {
+    ConstraintsMap capabilitiesMap = new ConstraintsMap();
+    ConstraintsArray codecArr = new ConstraintsArray();
+    for(RtpCapabilities.CodecCapability codec : capabilities.codecs){
+      ConstraintsMap codecMap = new ConstraintsMap();
+      codecMap.putString("mimeType", codec.mimeType);
+      codecMap.putInt("clockRate", codec.clockRate);
+      if(codec.numChannels != null)
+        codecMap.putInt("channels", codec.numChannels);
+      List<String> sdpFmtpLineArr = new ArrayList<>();
+      for(Map.Entry<String, String> entry : codec.parameters.entrySet()) {
+        if(entry.getKey().length() > 0) {
+          sdpFmtpLineArr.add(entry.getKey() + "=" + entry.getValue());
+        } else {
+          sdpFmtpLineArr.add(entry.getValue());
+        }
+      }
+      if(sdpFmtpLineArr.size() > 0)
+        codecMap.putString("sdpFmtpLine", String.join(";", sdpFmtpLineArr));
+      codecArr.pushMap(codecMap);
+    }
+    ConstraintsArray headerExtensionsArr = new ConstraintsArray();
+    for(RtpCapabilities.HeaderExtensionCapability headerExtension : capabilities.headerExtensions){
+      ConstraintsMap headerExtensionMap = new ConstraintsMap();
+      headerExtensionMap.putString("uri", headerExtension.getUri());
+      headerExtensionMap.putInt("id", headerExtension.getPreferredId());
+      headerExtensionMap.putBoolean("encrypted", headerExtension.getPreferredEncrypted());
+      headerExtensionsArr.pushMap(headerExtensionMap);
+    }
+    capabilitiesMap.putArray("codecs", codecArr.toArrayList());
+    capabilitiesMap.putArray("headerExtensions", headerExtensionsArr.toArrayList());
+    ConstraintsArray fecMechanismsArr = new ConstraintsArray();
+    capabilitiesMap.putArray("fecMechanisms", fecMechanismsArr.toArrayList());
+    return capabilitiesMap;
   }
 
   private PeerConnection getPeerConnection(String id) {
@@ -959,7 +1029,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     }
     // cryptoOptions
     if (map.hasKey("cryptoOptions")
-          && map.getType("cryptoOptions") == ObjectType.Map) {
+            && map.getType("cryptoOptions") == ObjectType.Map) {
       final ConstraintsMap cryptoOptions = map.getMap("cryptoOptions");
       conf.cryptoOptions = CryptoOptions.builder()
               .setEnableGcmCryptoSuites(cryptoOptions.hasKey("enableGcmCryptoSuites") && cryptoOptions.getBoolean("enableGcmCryptoSuites"))
@@ -967,6 +1037,11 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
               .setEnableEncryptedRtpHeaderExtensions(cryptoOptions.hasKey("enableEncryptedRtpHeaderExtensions") && cryptoOptions.getBoolean("enableEncryptedRtpHeaderExtensions"))
               .setEnableAes128Sha1_32CryptoCipher(cryptoOptions.hasKey("enableAes128Sha1_32CryptoCipher") && cryptoOptions.getBoolean("enableAes128Sha1_32CryptoCipher"))
               .createCryptoOptions();
+    }
+    if (map.hasKey("enableCpuOveruseDetection")
+            && map.getType("enableCpuOveruseDetection") == ObjectType.Boolean) {
+      final boolean v = map.getBoolean("enableCpuOveruseDetection");
+      conf.enableCpuOveruseDetection = v;
     }
     return conf;
   }
@@ -981,9 +1056,6 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
             parseMediaConstraints(constraints),
             observer);
     observer.setPeerConnection(peerConnection);
-    if (mPeerConnectionObservers.size() == 0) {
-      audioSwitchManager.start();
-    }
     mPeerConnectionObservers.put(peerConnectionId, observer);
     return peerConnectionId;
   }
@@ -1142,7 +1214,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
       array.pushMap(audio);
     } else {
       android.media.AudioManager audioManager = ((android.media.AudioManager) context
-          .getSystemService(Context.AUDIO_SERVICE));
+              .getSystemService(Context.AUDIO_SERVICE));
       final AudioDeviceInfo[] devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS);
       for (int i = 0; i < devices.length; i++) {
         AudioDeviceInfo device = devices[i];
@@ -1161,7 +1233,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
       }
     }
 
-    List<? extends AudioDevice> audioOutputs = audioSwitchManager.availableAudioDevices();
+    List<? extends AudioDevice> audioOutputs = AudioSwitchManager.instance.availableAudioDevices();
 
     for (AudioDevice audioOutput : audioOutputs) {
       ConstraintsMap audioOutputMap = new ConstraintsMap();
@@ -1245,7 +1317,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
           mediaStream.addTrack((VideoTrack) track);
           result.success(null);
         } else {
-          resultError("mediaStreamRemoveTrack", "mediaStreamAddTrack() track [" + trackId + "] has unsupported type: " + kind, result);
+          resultError("mediaStreamAddTrack", "mediaStreamAddTrack() track [" + trackId + "] has unsupported type: " + kind, result);
         }
       } else {
         resultError("mediaStreamAddTrack", "mediaStreamAddTrack() track [" + trackId + "] is null", result);
@@ -1268,13 +1340,13 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
           mediaStream.removeTrack((VideoTrack) track);
           result.success(null);
         } else {
-          resultError("mediaStreamRemoveTrack", "mediaStreamAddTrack() track [" + trackId + "] has unsupported type: " + kind, result);
+          resultError("mediaStreamRemoveTrack", "mediaStreamRemoveTrack() track [" + trackId + "] has unsupported type: " + kind, result);
         }
       } else {
-        resultError("mediaStreamRemoveTrack", "mediaStreamAddTrack() track [" + trackId + "] is null", result);
+        resultError("mediaStreamRemoveTrack", "mediaStreamRemoveTrack() track [" + trackId + "] is null", result);
       }
     } else {
-      resultError("mediaStreamRemoveTrack", "mediaStreamAddTrack() stream [" + streamId + "] is null", result);
+      resultError("mediaStreamRemoveTrack", "mediaStreamRemoveTrack() stream [" + streamId + "] is null", result);
     }
   }
 
@@ -1506,11 +1578,14 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     boolean res = false;
     PeerConnection peerConnection = getPeerConnection(id);
     if (peerConnection != null) {
+      int sdpMLineIndex = 0;
+      if (!candidateMap.isNull("sdpMLineIndex")) {
+        sdpMLineIndex = candidateMap.getInt("sdpMLineIndex");
+      }
       IceCandidate candidate = new IceCandidate(
-              candidateMap.getString("sdpMid"),
-              candidateMap.getInt("sdpMLineIndex"),
-              candidateMap.getString("candidate")
-      );
+          candidateMap.getString("sdpMid"),
+          sdpMLineIndex,
+          candidateMap.getString("candidate"));
       res = peerConnection.addIceCandidate(candidate);
     } else {
       resultError("peerConnectionAddICECandidate", "peerConnection is null", result);
@@ -1523,7 +1598,11 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     if (pco == null || pco.getPeerConnection() == null) {
       resultError("peerConnectionGetStats", "peerConnection is null", result);
     } else {
-      pco.getStats(trackId, result);
+      if(trackId == null || trackId.isEmpty()) {
+        pco.getStats(result);
+      } else {
+        pco.getStatsForTrack(trackId, result);
+      }
     }
   }
 
@@ -1547,35 +1626,51 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
 
   public void peerConnectionDispose(final String id) {
     PeerConnectionObserver pco = mPeerConnectionObservers.get(id);
-    if (pco == null || pco.getPeerConnection() == null) {
+    if (pco != null) {
+      if (peerConnectionDispose(pco)) {
+
+        mPeerConnectionObservers.remove(id);
+      }
+    } else {
+      Log.d(TAG, "peerConnectionDispose() peerConnectionObserver is null");
+    }
+    if (mPeerConnectionObservers.size() == 0) {
+      AudioSwitchManager.instance.stop();
+    }
+  }
+
+  public boolean peerConnectionDispose(final PeerConnectionObserver pco) {
+    if (pco.getPeerConnection() == null) {
       Log.d(TAG, "peerConnectionDispose() peerConnection is null");
     } else {
       pco.dispose();
-      mPeerConnectionObservers.remove(id);
+      return true;
     }
-    if (mPeerConnectionObservers.size() == 0) {
-      audioSwitchManager.stop();
-    }
+    return false;
   }
 
   public void streamDispose(final String streamId) {
     MediaStream stream = localStreams.get(streamId);
     if (stream != null) {
-      List<VideoTrack> videoTracks = stream.videoTracks;
-      for (VideoTrack track : videoTracks) {
-        localTracks.remove(track.id());
-        getUserMediaImpl.removeVideoCapturer(track.id());
-        stream.removeTrack(track);
-      }
-      List<AudioTrack> audioTracks = stream.audioTracks;
-      for (AudioTrack track : audioTracks) {
-        localTracks.remove(track.id());
-        stream.removeTrack(track);
-      }
+      streamDispose(stream);
       localStreams.remove(streamId);
       removeStreamForRendererById(streamId);
     } else {
       Log.d(TAG, "streamDispose() mediaStream is null");
+    }
+  }
+
+  public void streamDispose(final MediaStream stream) {
+    List<VideoTrack> videoTracks = stream.videoTracks;
+    for (VideoTrack track : videoTracks) {
+      localTracks.remove(track.id());
+      getUserMediaImpl.removeVideoCapturer(track.id());
+      stream.removeTrack(track);
+    }
+    List<AudioTrack> audioTracks = stream.audioTracks;
+    for (AudioTrack track : audioTracks) {
+      localTracks.remove(track.id());
+      stream.removeTrack(track);
     }
   }
 
@@ -1696,6 +1791,15 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     }
   }
 
+  public void rtpTransceiverSetCodecPreferences(String peerConnectionId, String transceiverId, List<Map<String, Object>> codecs, Result result) {
+    PeerConnectionObserver pco = mPeerConnectionObservers.get(peerConnectionId);
+    if (pco == null || pco.getPeerConnection() == null) {
+      resultError("setCodecPreferences", "peerConnection is null", result);
+    } else {
+      pco.rtpTransceiverSetCodecPreferences(transceiverId, codecs, result);
+    }
+  }
+
   public void rtpTransceiverGetDirection(String peerConnectionId, String transceiverId, Result result) {
     PeerConnectionObserver pco = mPeerConnectionObservers.get(peerConnectionId);
     if (pco == null || pco.getPeerConnection() == null) {
@@ -1732,15 +1836,6 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     }
   }
 
-  public void rtpSenderDispose(String peerConnectionId, String rtpSenderId, Result result) {
-    PeerConnectionObserver pco = mPeerConnectionObservers.get(peerConnectionId);
-    if (pco == null || pco.getPeerConnection() == null) {
-      resultError("rtpSenderDispose", "peerConnection is null", result);
-    } else {
-      pco.rtpSenderDispose(rtpSenderId, result);
-    }
-  }
-
   public void getSenders(String peerConnectionId, Result result) {
     PeerConnectionObserver pco = mPeerConnectionObservers.get(peerConnectionId);
     if (pco == null || pco.getPeerConnection() == null) {
@@ -1772,7 +1867,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     PeerConnectionObserver pco = mPeerConnectionObservers.get(peerConnectionId);
     if (pco == null || pco.getPeerConnection() == null) {
       resultError("rtpSenderSetTrack", "peerConnection is null", result);
-    } else {      
+    } else {
       MediaStreamTrack track = null;
       if (trackId.length() > 0) {
         track = localTracks.get(trackId);

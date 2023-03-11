@@ -47,15 +47,15 @@ class RTCRtpSenderNative extends RTCRtpSender {
     try {
       final response = await WebRTC.invokeMethod('getStats', <String, dynamic>{
         'peerConnectionId': _peerConnectionId,
-        if (track != null) 'track': track!.id,
+        if (track != null) 'trackId': track!.id,
       });
       var stats = <StatsReport>[];
       if (response != null) {
         List<dynamic> reports = response['stats'];
-        reports.forEach((report) {
+        for (var report in reports) {
           stats.add(StatsReport(report['id'], report['type'],
               report['timestamp'], report['values']));
-        });
+        }
       }
       return stats;
     } on PlatformException catch (e) {
@@ -132,16 +132,9 @@ class RTCRtpSenderNative extends RTCRtpSender {
   @override
   RTCDTMFSender get dtmfSender => _dtmf;
 
+  @Deprecated(
+      'No need to dispose rtpSender as it is handled by peerConnection.')
   @override
   @mustCallSuper
-  Future<void> dispose() async {
-    try {
-      await WebRTC.invokeMethod('rtpSenderDispose', <String, dynamic>{
-        'peerConnectionId': _peerConnectionId,
-        'rtpSenderId': _id,
-      });
-    } on PlatformException catch (e) {
-      throw 'Unable to RTCRtpSender::dispose: ${e.message}';
-    }
-  }
+  Future<void> dispose() async {}
 }
