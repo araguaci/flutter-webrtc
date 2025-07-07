@@ -21,7 +21,8 @@
 #include "rtc_base/ref_count.h"
 
 namespace libwebrtc {
-class IceTransport : public rtc::RefCountInterface {
+
+class IceTransport : public RefCountInterface {
  public:
   virtual IceTransport* internal() = 0;
 };
@@ -66,8 +67,7 @@ class IceTransportFactory {
   virtual ~IceTransportFactory() = default;
 
   virtual scoped_refptr<IceTransport> CreateIceTransport(
-      const std::string& transport_name,
-      int component,
+      const std::string& transport_name, int component,
       IceTransportInit init) = 0;
 };
 

@@ -1,10 +1,9 @@
 #ifndef LIB_WEBRTC_RTC_PEERCONNECTION_FACTORY_HXX
 #define LIB_WEBRTC_RTC_PEERCONNECTION_FACTORY_HXX
 
-#include "rtc_types.h"
-
 #include "rtc_audio_source.h"
 #include "rtc_audio_track.h"
+#include "rtc_types.h"
 #ifdef RTC_DESKTOP_DEVICE
 #include "rtc_desktop_device.h"
 #endif
@@ -17,6 +16,7 @@ namespace libwebrtc {
 
 class RTCPeerConnection;
 class RTCAudioDevice;
+class RTCAudioProcessing;
 class RTCVideoDevice;
 class RTCRtpCapabilities;
 
@@ -34,16 +34,19 @@ class RTCPeerConnectionFactory : public RefCountInterface {
 
   virtual scoped_refptr<RTCAudioDevice> GetAudioDevice() = 0;
 
+  virtual scoped_refptr<RTCAudioProcessing> GetAudioProcessing() = 0;
+
   virtual scoped_refptr<RTCVideoDevice> GetVideoDevice() = 0;
 #ifdef RTC_DESKTOP_DEVICE
   virtual scoped_refptr<RTCDesktopDevice> GetDesktopDevice() = 0;
 #endif
   virtual scoped_refptr<RTCAudioSource> CreateAudioSource(
-      const string audio_source_label) = 0;
+      const string audio_source_label,
+      RTCAudioSource::SourceType source_type =
+          RTCAudioSource::SourceType::kMicrophone) = 0;
 
   virtual scoped_refptr<RTCVideoSource> CreateVideoSource(
-      scoped_refptr<RTCVideoCapturer> capturer,
-      const string video_source_label,
+      scoped_refptr<RTCVideoCapturer> capturer, const string video_source_label,
       scoped_refptr<RTCMediaConstraints> constraints) = 0;
 #ifdef RTC_DESKTOP_DEVICE
   virtual scoped_refptr<RTCVideoSource> CreateDesktopSource(
@@ -52,12 +55,10 @@ class RTCPeerConnectionFactory : public RefCountInterface {
       scoped_refptr<RTCMediaConstraints> constraints) = 0;
 #endif
   virtual scoped_refptr<RTCAudioTrack> CreateAudioTrack(
-      scoped_refptr<RTCAudioSource> source,
-      const string track_id) = 0;
+      scoped_refptr<RTCAudioSource> source, const string track_id) = 0;
 
   virtual scoped_refptr<RTCVideoTrack> CreateVideoTrack(
-      scoped_refptr<RTCVideoSource> source,
-      const string track_id) = 0;
+      scoped_refptr<RTCVideoSource> source, const string track_id) = 0;
 
   virtual scoped_refptr<RTCMediaStream> CreateStream(
       const string stream_id) = 0;

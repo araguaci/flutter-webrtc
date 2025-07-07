@@ -1,3 +1,5 @@
+// Modifications by Signify, Copyright 2025, Signify Holding -  SPDX-License-Identifier: MIT
+
 package com.cloudwebrtc.webrtc.record;
 
 import android.media.MediaCodec;
@@ -19,6 +21,7 @@ import org.webrtc.audio.JavaAudioDeviceModule.SamplesReadyCallback;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.CountDownLatch;
 
 class VideoFileRenderer implements VideoSink, SamplesReadyCallback {
     private static final String TAG = "VideoFileRenderer";
@@ -32,7 +35,7 @@ class VideoFileRenderer implements VideoSink, SamplesReadyCallback {
     private ByteBuffer[] audioInputBuffers;
     private ByteBuffer[] audioOutputBuffers;
     private EglBase eglBase;
-    private EglBase.Context sharedContext;
+    private final EglBase.Context sharedContext;
     private VideoFrameDrawer frameDrawer;
 
     // TODO: these ought to be configurable as well
@@ -40,9 +43,10 @@ class VideoFileRenderer implements VideoSink, SamplesReadyCallback {
     private static final int FRAME_RATE = 30;               // 30fps
     private static final int IFRAME_INTERVAL = 5;           // 5 seconds between I-frames
 
-    private MediaMuxer mediaMuxer;
+    private final MediaMuxer mediaMuxer;
     private MediaCodec encoder;
-    private MediaCodec.BufferInfo bufferInfo, audioBufferInfo;
+    private final MediaCodec.BufferInfo bufferInfo;
+    private MediaCodec.BufferInfo audioBufferInfo;
     private int trackIndex = -1;
     private int audioTrackIndex;
     private boolean isRunning = true;
@@ -126,27 +130,50 @@ class VideoFileRenderer implements VideoSink, SamplesReadyCallback {
     /**
      * Release all resources. All already posted frames will be rendered first.
      */
+    // Start Signify modification
     void release() {
         isRunning = false;
-        if (audioThreadHandler != null)
+        CountDownLatch latch = new CountDownLatch(audioThreadHandler  != null ? 2 : 1);
+        if (audioThreadHandler != null) {
             audioThreadHandler.post(() -> {
-                if (audioEncoder != null) {
-                    audioEncoder.stop();
-                    audioEncoder.release();
+                try{
+                    if (audioEncoder != null) {
+                        audioEncoder.stop();
+                        audioEncoder.release();
+                    }
+                    audioThread.quit();
+                } finally {
+                    latch.countDown();
                 }
-                audioThread.quit();
             });
+        }
+
         renderThreadHandler.post(() -> {
-            if (encoder != null) {
-                encoder.stop();
-                encoder.release();
+            try {
+                if (encoder != null) {
+                    encoder.stop();
+                    encoder.release();
+                }
+                eglBase.release();
+                if (muxerStarted) {
+                    mediaMuxer.stop();
+                    mediaMuxer.release();
+                    muxerStarted = false;
+                }
+                renderThread.quit();
+            } finally {
+                latch.countDown();
             }
-            eglBase.release();
-            mediaMuxer.stop();
-            mediaMuxer.release();
-            renderThread.quit();
         });
+
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Log.e(TAG, "Release interrupted", e);
+            Thread.currentThread().interrupt();
+        }
     }
+    // End Signify modification
 
     private boolean encoderStarted = false;
     private volatile boolean muxerStarted = false;
@@ -173,7 +200,7 @@ class VideoFileRenderer implements VideoSink, SamplesReadyCallback {
 
                 Log.e(TAG, "encoder output format changed: " + newFormat);
                 trackIndex = mediaMuxer.addTrack(newFormat);
-                if (audioTrackIndex != -1 && !muxerStarted) {
+                if (trackIndex != -1 && !muxerStarted) {
                     mediaMuxer.start();
                     muxerStarted = true;
                 }
@@ -229,7 +256,7 @@ class VideoFileRenderer implements VideoSink, SamplesReadyCallback {
 
                 Log.w(TAG, "encoder output format changed: " + newFormat);
                 audioTrackIndex = mediaMuxer.addTrack(newFormat);
-                if (trackIndex != -1 && !muxerStarted) {
+                if (audioTrackIndex != -1 && !muxerStarted) {
                     mediaMuxer.start();
                     muxerStarted = true;
                 }
